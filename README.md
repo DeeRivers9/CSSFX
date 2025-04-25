@@ -1,1 +1,1 @@
-# Currency Strength App (SAR + Adaptive Logic + Fallback)
+# Final Currency Strength App (Sorted, Tuned ADX, SAR Buffering)
