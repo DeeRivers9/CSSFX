@@ -1,5 +1,5 @@
 import streamlit as st
-from tradingview_ta import TA_Handler, Interval, Exchange
+from tradingview_ta import TA_Handler, Interval
 import pandas as pd
 
 # Define currency pairs
@@ -24,7 +24,8 @@ timeframes = {
 
 currencies = list(set([cur for pair in pairs.values() for cur in pair]))
 
-def get_signal(pair, interval):
+# Detect trend using SAR + ADX
+def get_sar_adx_trend(pair, interval):
     try:
         handler = TA_Handler(
             symbol=pair,
@@ -32,11 +33,25 @@ def get_signal(pair, interval):
             exchange="FX_IDC",
             interval=interval
         )
-        summary = handler.get_analysis().summary["RECOMMENDATION"]
-        return summary
+        analysis = handler.get_analysis()
+        ind = analysis.indicators
+
+        close = ind.get("close", 0)
+        sar = ind.get("SAR", 0)
+        adx = ind.get("ADX", 0)
+
+        if adx < 20:
+            return "NEUTRAL"  # Weak trend = range
+        elif close > sar:
+            return "BUY"
+        elif close < sar:
+            return "SELL"
+        else:
+            return "NEUTRAL"
     except:
         return "NEUTRAL"
 
+# Update currency scores
 def update_scores(scores, base, quote, signal):
     if signal == "BUY":
         scores[base] += 1
@@ -44,36 +59,31 @@ def update_scores(scores, base, quote, signal):
     elif signal == "SELL":
         scores[base] -= 1
         scores[quote] += 1
-    # NEUTRAL = no change
 
+# Determine remark based on all 3 timeframes
 def get_remark(row):
     values = [row["H1"], row["H4"], row["D1"]]
     if all(-3 <= v <= 3 for v in values):
         return "NEUTRAL"
-    elif (max(values) > 3 or min(values) < -3):
-        if any(v > 3 for v in values) and any(v < -3 for v in values):
-            return "INVALID"
-        elif abs(max(values) - min(values)) > 6:
-            return "INVALID"
-        else:
-            return "NEUTRAL"
-    else:
+    elif any(v > 3 for v in values) and any(v < -3 for v in values):
         return "INVALID"
+    else:
+        return "NEUTRAL"
 
 # Streamlit UI
-st.title("📊 Currency Strength Matrix (Powered by TradingView TA)")
+st.title("📊 Currency Strength Matrix (SAR + ADX Trend Logic)")
 
 results = {}
 
 for tf_name, tf_interval in timeframes.items():
     scores = {c: 0 for c in currencies}
     for symbol, (base, quote) in pairs.items():
-        signal = get_signal(symbol, tf_interval)
+        signal = get_sar_adx_trend(symbol, tf_interval)
         update_scores(scores, base, quote, signal)
     df = pd.DataFrame(scores.items(), columns=["Currency", tf_name])
     results[tf_name] = df
 
-# Merge results
+# Merge and display
 final_df = results["H1"].merge(results["H4"], on="Currency").merge(results["D1"], on="Currency")
 final_df["Remarks"] = final_df.apply(get_remark, axis=1)
 

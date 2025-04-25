@@ -1,1 +1,1 @@
-# Currency Strength App (TradingView Based)
+# Currency Strength App (SAR + ADX Logic)
