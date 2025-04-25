@@ -32,27 +32,35 @@ def fetch_candles(symbol, interval, limit):
         if "values" in data:
             df = pd.DataFrame(data["values"])
             df["datetime"] = pd.to_datetime(df["datetime"])
-            df = df.sort_values("datetime")
-            df = df.astype({"high": float, "low": float})
-            return df
+            df = df.sort_values("datetime").astype({"high": float, "low": float})
+            return df.reset_index(drop=True)
     return None
 
-def detect_recent_swing_trend(df, lookback=5):
-    if df is None or len(df) < lookback + 1:
-        return "NEUTRAL"
+def find_recent_swing(df, swing_window=3):
+    highs = df["high"]
+    lows = df["low"]
+    swing_high_idx = None
+    swing_low_idx = None
 
-    recent_high = df["high"].iloc[-1]
-    recent_low = df["low"].iloc[-1]
+    for i in range(swing_window, len(df) - swing_window):
+        is_high = all(highs[i] > highs[i - j] and highs[i] > highs[i + j] for j in range(1, swing_window + 1))
+        is_low = all(lows[i] < lows[i - j] and lows[i] < lows[i + j] for j in range(1, swing_window + 1))
 
-    prev_highs = df["high"].iloc[-(lookback+1):-1]
-    prev_lows = df["low"].iloc[-(lookback+1):-1]
+        if is_high:
+            swing_high_idx = i
+        if is_low:
+            swing_low_idx = i
 
-    if recent_high > prev_highs.max():
-        return "BUY"
-    elif recent_low < prev_lows.min():
-        return "SELL"
-    else:
-        return "NEUTRAL"
+    if swing_high_idx is not None and swing_low_idx is not None:
+        last_close = df["close"].iloc[-1]
+        last_high = highs[swing_high_idx]
+        last_low = lows[swing_low_idx]
+
+        if last_close > last_high:
+            return "BUY"
+        elif last_close < last_low:
+            return "SELL"
+    return "NEUTRAL"
 
 def update_scores(scores, base, quote, signal):
     if signal == "BUY":
@@ -72,7 +80,7 @@ def get_remark(row):
         return "NEUTRAL"
 
 # Streamlit App
-st.title("📊 Currency Strength Matrix (Corrected Zigzag Swing Logic)")
+st.title("📊 Currency Strength Matrix (True Zigzag Logic: Recent Swing Detection)")
 
 results = {}
 debug_output = []
@@ -81,7 +89,7 @@ for tf_label, tf_info in timeframes.items():
     scores = {c: 0 for c in sorted_currencies}
     for symbol, (base, quote) in pairs.items():
         df = fetch_candles(symbol, tf_info["interval"], tf_info["bars"])
-        signal = detect_recent_swing_trend(df)
+        signal = find_recent_swing(df)
         update_scores(scores, base, quote, signal)
         debug_output.append(f"{symbol} ({tf_label}): {signal}")
     df_result = pd.DataFrame(scores.items(), columns=["Currency", tf_label])
@@ -95,6 +103,6 @@ final_df = final_df.sort_values("Currency")
 
 st.dataframe(final_df, use_container_width=True)
 
-with st.expander("🔍 Debug Logs (Corrected Swing Detection)"):
+with st.expander("🔍 Debug Logs (Zigzag Swing Detection)"):
     for line in debug_output:
         st.text(line)
