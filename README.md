@@ -1,1 +1,1 @@
-# Currency Strength App (SAR + ADX Logic)
+# Currency Strength App with SAR + ADX + TV Summary Fallback and Debug Log

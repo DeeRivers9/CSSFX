@@ -15,17 +15,16 @@ pairs = {
     "GBPJPY": ("GBP", "JPY")
 }
 
-# Define timeframes
+# Timeframes with individual ADX thresholds
 timeframes = {
-    "H1": Interval.INTERVAL_1_HOUR,
-    "H4": Interval.INTERVAL_4_HOURS,
-    "D1": Interval.INTERVAL_1_DAY
+    "H1": {"interval": Interval.INTERVAL_1_HOUR, "adx_thresh": 20},
+    "H4": {"interval": Interval.INTERVAL_4_HOURS, "adx_thresh": 15},
+    "D1": {"interval": Interval.INTERVAL_1_DAY, "adx_thresh": 15}
 }
 
 currencies = list(set([cur for pair in pairs.values() for cur in pair]))
 
-# Detect trend using SAR + ADX
-def get_sar_adx_trend(pair, interval):
+def get_sar_adx_trend(pair, interval, adx_threshold, tf_label, debug_logs):
     try:
         handler = TA_Handler(
             symbol=pair,
@@ -36,22 +35,31 @@ def get_sar_adx_trend(pair, interval):
         analysis = handler.get_analysis()
         ind = analysis.indicators
 
-        close = ind.get("close", 0)
-        sar = ind.get("SAR", 0)
-        adx = ind.get("ADX", 0)
+        close = ind.get("close", None)
+        sar = ind.get("SAR", None)
+        adx = ind.get("ADX", None)
 
-        if adx < 20:
-            return "NEUTRAL"  # Weak trend = range
+        if close is None or sar is None or adx is None:
+            signal = analysis.summary["RECOMMENDATION"]
+            debug_logs.append(f"{pair} ({tf_label}): fallback to TV_TA summary = {signal}")
+            return signal
+
+        if adx < adx_threshold:
+            debug_logs.append(f"{pair} ({tf_label}): ADX={adx} < {adx_threshold} → NEUTRAL")
+            return "NEUTRAL"
         elif close > sar:
+            debug_logs.append(f"{pair} ({tf_label}): ADX={adx}, Close={close} > SAR={sar} → BUY")
             return "BUY"
         elif close < sar:
+            debug_logs.append(f"{pair} ({tf_label}): ADX={adx}, Close={close} < SAR={sar} → SELL")
             return "SELL"
         else:
+            debug_logs.append(f"{pair} ({tf_label}): ADX={adx}, Close≈SAR → NEUTRAL")
             return "NEUTRAL"
-    except:
+    except Exception as e:
+        debug_logs.append(f"{pair} ({tf_label}): Exception → NEUTRAL ({e})")
         return "NEUTRAL"
 
-# Update currency scores
 def update_scores(scores, base, quote, signal):
     if signal == "BUY":
         scores[base] += 1
@@ -60,7 +68,6 @@ def update_scores(scores, base, quote, signal):
         scores[base] -= 1
         scores[quote] += 1
 
-# Determine remark based on all 3 timeframes
 def get_remark(row):
     values = [row["H1"], row["H4"], row["D1"]]
     if all(-3 <= v <= 3 for v in values):
@@ -70,21 +77,29 @@ def get_remark(row):
     else:
         return "NEUTRAL"
 
-# Streamlit UI
-st.title("📊 Currency Strength Matrix (SAR + ADX Trend Logic)")
+# UI setup
+st.title("📊 Currency Strength Matrix (SAR + ADX w/ Fallback & Debug)")
 
 results = {}
+debug_output = []
 
-for tf_name, tf_interval in timeframes.items():
+# Collect scores per timeframe
+for tf_label, tf_params in timeframes.items():
     scores = {c: 0 for c in currencies}
     for symbol, (base, quote) in pairs.items():
-        signal = get_sar_adx_trend(symbol, tf_interval)
+        signal = get_sar_adx_trend(symbol, tf_params["interval"], tf_params["adx_thresh"], tf_label, debug_output)
         update_scores(scores, base, quote, signal)
-    df = pd.DataFrame(scores.items(), columns=["Currency", tf_name])
-    results[tf_name] = df
+    df = pd.DataFrame(scores.items(), columns=["Currency", tf_label])
+    results[tf_label] = df
 
-# Merge and display
+# Merge results and apply remark rules
 final_df = results["H1"].merge(results["H4"], on="Currency").merge(results["D1"], on="Currency")
 final_df["Remarks"] = final_df.apply(get_remark, axis=1)
 
+# Show result
 st.dataframe(final_df, use_container_width=True)
+
+# Optional debug output
+with st.expander("🔍 Debug Logs (Indicator Values & Fallback Info)"):
+    for line in debug_output:
+        st.text(line)
