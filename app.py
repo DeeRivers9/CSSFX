@@ -1,64 +1,99 @@
 import streamlit as st
-from tradingview_ta import TA_Handler, Interval
 import pandas as pd
+import requests
+from datetime import datetime, timedelta
 
-# Define currency pairs and base/quote
+# Your API key from TwelveData
+API_KEY = "85aff05872a5422dbe962150c8d83ab8"
+
+# Define pairs and mapping
 pairs = {
-    "EURUSD": ("EUR", "USD"),
-    "GBPUSD": ("GBP", "USD"),
-    "USDJPY": ("USD", "JPY"),
-    "AUDUSD": ("AUD", "USD"),
-    "NZDUSD": ("NZD", "USD"),
-    "USDCAD": ("USD", "CAD"),
-    "EURJPY": ("EUR", "JPY"),
-    "EURGBP": ("EUR", "GBP"),
-    "GBPJPY": ("GBP", "JPY")
+    "EUR/USD": ("EUR", "USD"),
+    "GBP/USD": ("GBP", "USD"),
+    "USD/JPY": ("USD", "JPY"),
+    "AUD/USD": ("AUD", "USD"),
+    "NZD/USD": ("NZD", "USD"),
+    "USD/CAD": ("USD", "CAD"),
+    "EUR/JPY": ("EUR", "JPY"),
+    "EUR/GBP": ("EUR", "GBP"),
+    "GBP/JPY": ("GBP", "JPY")
 }
 
-# Timeframes and ADX thresholds
+# Timeframes settings
 timeframes = {
-    "H1": {"interval": Interval.INTERVAL_1_HOUR, "adx_thresh": 20, "sar_buffer": 0.0001},
-    "H4": {"interval": Interval.INTERVAL_4_HOURS, "adx_thresh": 15, "sar_buffer": 0.0003},
-    "D1": {"interval": Interval.INTERVAL_1_DAY, "adx_thresh": 10, "sar_buffer": 0.0001}
+    "H1": {"interval": "1h"},
+    "H4": {"interval": "4h"},
+    "D1": {"interval": "1day"}
 }
 
-# Timezone-sorted currency order
+# ADX thresholds per timeframe
+adx_thresholds = {
+    "H1": 20,
+    "H4": 15,
+    "D1": 10
+}
+
+# SAR buffer per timeframe
+sar_buffers = {
+    "H1": 0.0001,
+    "H4": 0.0003,
+    "D1": 0.0001
+}
+
+# Sorted currency order
 sorted_currencies = ["AUD", "NZD", "JPY", "EUR", "GBP", "USD", "CAD"]
 
-def get_signal(pair, interval, adx_threshold, sar_buffer, tf_label, debug_logs):
+def fetch_indicator(symbol, interval, indicator):
+    url = f"https://api.twelvedata.com/{indicator}?symbol={symbol}&interval={interval}&apikey={API_KEY}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        if "values" in data:
+            return pd.DataFrame(data["values"])
+    return None
+
+def get_signal(symbol, tf_label, debug_logs):
+    interval = timeframes[tf_label]["interval"]
+    adx_thresh = adx_thresholds[tf_label]
+    sar_buffer = sar_buffers[tf_label]
+
     try:
-        handler = TA_Handler(symbol=pair, screener="forex", exchange="FX_IDC", interval=interval)
-        analysis = handler.get_analysis()
-        ind = analysis.indicators
-        summary = analysis.summary.get("RECOMMENDATION", "NEUTRAL")
+        # Fetch latest SAR
+        sar_df = fetch_indicator(symbol, interval, "sar")
+        # Fetch latest ADX
+        adx_df = fetch_indicator(symbol, interval, "adx")
+        # Fetch latest price
+        price_url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={API_KEY}"
+        price_response = requests.get(price_url)
+        close_price = float(price_response.json().get("price", 0))
 
-        close = ind.get("close")
-        sar = ind.get("SAR")
-        adx = ind.get("ADX")
-
-        if close is None or sar is None:
-            debug_logs.append(f"{pair} ({tf_label}): Missing SAR/Close → fallback to summary = {summary}")
-            return summary
-
-        if adx is not None and adx < adx_threshold:
-            debug_logs.append(f"{pair} ({tf_label}): ADX={adx:.2f} < {adx_threshold} → NEUTRAL")
+        if sar_df is None or adx_df is None or close_price == 0:
+            debug_logs.append(f"{symbol} ({tf_label}): Missing data → NEUTRAL")
             return "NEUTRAL"
 
-        if abs(close - sar) < sar_buffer:
-            debug_logs.append(f"{pair} ({tf_label}): |Close - SAR|={abs(close - sar):.5f} < {sar_buffer} → fallback to summary = {summary}")
-            return summary
+        latest_sar = float(sar_df.iloc[0]["sar"])
+        latest_adx = float(adx_df.iloc[0]["adx"])
 
-        if close > sar:
-            debug_logs.append(f"{pair} ({tf_label}): Close={close} > SAR={sar} → BUY")
+        if latest_adx < adx_thresh:
+            debug_logs.append(f"{symbol} ({tf_label}): ADX={latest_adx:.2f} < {adx_thresh} → NEUTRAL")
+            return "NEUTRAL"
+
+        if abs(close_price - latest_sar) < sar_buffer:
+            debug_logs.append(f"{symbol} ({tf_label}): |Close - SAR|={abs(close_price - latest_sar):.5f} < {sar_buffer} → fallback NEUTRAL")
+            return "NEUTRAL"
+
+        if close_price > latest_sar:
+            debug_logs.append(f"{symbol} ({tf_label}): Close={close_price} > SAR={latest_sar} → BUY")
             return "BUY"
-        elif close < sar:
-            debug_logs.append(f"{pair} ({tf_label}): Close={close} < SAR={sar} → SELL")
+        elif close_price < latest_sar:
+            debug_logs.append(f"{symbol} ({tf_label}): Close={close_price} < SAR={latest_sar} → SELL")
             return "SELL"
         else:
-            debug_logs.append(f"{pair} ({tf_label}): Close≈SAR → fallback to summary = {summary}")
-            return summary
+            debug_logs.append(f"{symbol} ({tf_label}): Close≈SAR → fallback NEUTRAL")
+            return "NEUTRAL"
+
     except Exception as e:
-        debug_logs.append(f"{pair} ({tf_label}): Exception → NEUTRAL ({e})")
+        debug_logs.append(f"{symbol} ({tf_label}): Exception → NEUTRAL ({e})")
         return "NEUTRAL"
 
 def update_scores(scores, base, quote, signal):
@@ -79,20 +114,20 @@ def get_remark(row):
         return "NEUTRAL"
 
 # Streamlit app
-st.title("📊 Currency Strength Matrix (Refined SAR + ADX Sensitivity + Sorted Output)")
+st.title("📊 Currency Strength Matrix (TwelveData SAR + ADX Logic)")
 
 results = {}
 debug_output = []
 
-for tf_label, tf_params in timeframes.items():
+for tf_label in timeframes.keys():
     scores = {c: 0 for c in sorted_currencies}
     for symbol, (base, quote) in pairs.items():
-        signal = get_signal(symbol, tf_params["interval"], tf_params["adx_thresh"], tf_params["sar_buffer"], tf_label, debug_output)
+        signal = get_signal(symbol, tf_label, debug_output)
         update_scores(scores, base, quote, signal)
     df = pd.DataFrame(scores.items(), columns=["Currency", tf_label])
     results[tf_label] = df
 
-# Merge and reorder results
+# Merge and reorder
 final_df = results["H1"].merge(results["H4"], on="Currency").merge(results["D1"], on="Currency")
 final_df["Remarks"] = final_df.apply(get_remark, axis=1)
 final_df["Currency"] = pd.Categorical(final_df["Currency"], categories=sorted_currencies, ordered=True)
@@ -100,6 +135,6 @@ final_df = final_df.sort_values("Currency")
 
 st.dataframe(final_df, use_container_width=True)
 
-with st.expander("🔍 Debug Logs (SAR, ADX, Fallbacks)"):
+with st.expander("🔍 Debug Logs"):
     for line in debug_output:
         st.text(line)

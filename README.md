@@ -1,1 +1,1 @@
-# Final Currency Strength App (Sorted, Tuned ADX, SAR Buffering)
+# Currency Strength App (TwelveData SAR + ADX)
