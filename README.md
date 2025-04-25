@@ -1,1 +1,1 @@
-# Currency Strength App (Zigzag with Robust Safe Logic)
+# Currency Strength App (Zigzag with Proper Indentation Fix)

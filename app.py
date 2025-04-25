@@ -32,7 +32,7 @@ def fetch_candles(symbol, interval, limit):
         if "values" in data:
             df = pd.DataFrame(data["values"])
             df["datetime"] = pd.to_datetime(df["datetime"])
-            df = df.sort_values("datetime").astype({"high": float, "low": float})
+            df = df.sort_values("datetime").astype({"high": float, "low": float, "close": float})
             return df.reset_index(drop=True)
     return None
 
@@ -52,20 +52,17 @@ def find_recent_swing(df, swing_window=3):
             swing_low_idx = i
 
     if swing_high_idx is not None and swing_low_idx is not None:
-        last_close = df["close"].iloc[-1]
-        last_high = highs[swing_high_idx]
-        last_low = lows[swing_low_idx]
-
         try:
-        last_close = float(df["close"].iloc[-1])
-        last_high = float(highs[swing_high_idx])
-        last_low = float(lows[swing_low_idx])
-        if last_close > last_high:
-            return "BUY"
-        elif last_close < last_low:
-            return "SELL"
-    except:
-        return "NEUTRAL"
+            last_close = float(df["close"].iloc[-1])
+            last_high = float(highs[swing_high_idx])
+            last_low = float(lows[swing_low_idx])
+
+            if last_close > last_high:
+                return "BUY"
+            elif last_close < last_low:
+                return "SELL"
+        except:
+            return "NEUTRAL"
     return "NEUTRAL"
 
 def update_scores(scores, base, quote, signal):
@@ -79,18 +76,14 @@ def update_scores(scores, base, quote, signal):
 def get_remark(row):
     values = [row["H1"], row["H4"], row["D1"]]
     if all(-3 <= v <= 3 for v in values):
-        except:
         return "NEUTRAL"
-    return "NEUTRAL"
     elif any(v > 3 for v in values) and any(v < -3 for v in values):
         return "INVALID"
     else:
-        except:
         return "NEUTRAL"
-    return "NEUTRAL"
 
 # Streamlit App
-st.title("📊 Currency Strength Matrix (True Zigzag Logic: Recent Swing Detection)")
+st.title("📊 Currency Strength Matrix (Zigzag Swing Detection - Final Safe Fix)")
 
 results = {}
 debug_output = []
@@ -113,6 +106,6 @@ final_df = final_df.sort_values("Currency")
 
 st.dataframe(final_df, use_container_width=True)
 
-with st.expander("🔍 Debug Logs (Zigzag Swing Detection)"):
+with st.expander("🔍 Debug Logs (Zigzag Final Fix)"):
     for line in debug_output:
         st.text(line)
