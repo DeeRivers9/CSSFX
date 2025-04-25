@@ -56,10 +56,16 @@ def find_recent_swing(df, swing_window=3):
         last_high = highs[swing_high_idx]
         last_low = lows[swing_low_idx]
 
+        try:
+        last_close = float(df["close"].iloc[-1])
+        last_high = float(highs[swing_high_idx])
+        last_low = float(lows[swing_low_idx])
         if last_close > last_high:
             return "BUY"
         elif last_close < last_low:
             return "SELL"
+    except:
+        return "NEUTRAL"
     return "NEUTRAL"
 
 def update_scores(scores, base, quote, signal):
@@ -73,11 +79,15 @@ def update_scores(scores, base, quote, signal):
 def get_remark(row):
     values = [row["H1"], row["H4"], row["D1"]]
     if all(-3 <= v <= 3 for v in values):
+        except:
         return "NEUTRAL"
+    return "NEUTRAL"
     elif any(v > 3 for v in values) and any(v < -3 for v in values):
         return "INVALID"
     else:
+        except:
         return "NEUTRAL"
+    return "NEUTRAL"
 
 # Streamlit App
 st.title("📊 Currency Strength Matrix (True Zigzag Logic: Recent Swing Detection)")

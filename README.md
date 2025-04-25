@@ -1,1 +1,1 @@
-# Currency Strength App (Zigzag Peak/Valley Swing Detection)
+# Currency Strength App (Zigzag with Robust Safe Logic)
