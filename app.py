@@ -16,7 +16,6 @@ pairs = {
     "GBP/JPY": ("GBP", "JPY")
 }
 
-# Timeframe and bar settings
 timeframes = {
     "H1": {"interval": "1h", "bars": 300},
     "H4": {"interval": "4h", "bars": 150},
@@ -38,22 +37,19 @@ def fetch_candles(symbol, interval, limit):
             return df
     return None
 
-def detect_recent_swing_trend(df):
-    if df is None or len(df) < 20:
+def detect_recent_swing_trend(df, lookback=5):
+    if df is None or len(df) < lookback + 1:
         return "NEUTRAL"
 
     recent_high = df["high"].iloc[-1]
     recent_low = df["low"].iloc[-1]
 
-    prev_highs = df["high"].iloc[:-1]
-    prev_lows = df["low"].iloc[:-1]
+    prev_highs = df["high"].iloc[-(lookback+1):-1]
+    prev_lows = df["low"].iloc[-(lookback+1):-1]
 
-    last_swing_high = prev_highs.idxmax()
-    last_swing_low = prev_lows.idxmin()
-
-    if last_swing_high > last_swing_low and recent_high > prev_highs[last_swing_high]:
+    if recent_high > prev_highs.max():
         return "BUY"
-    elif last_swing_low > last_swing_high and recent_low < prev_lows[last_swing_low]:
+    elif recent_low < prev_lows.min():
         return "SELL"
     else:
         return "NEUTRAL"
@@ -75,8 +71,8 @@ def get_remark(row):
     else:
         return "NEUTRAL"
 
-# Streamlit UI
-st.title("📊 Currency Strength Matrix (Refined Zigzag Logic: Recent Swings Only)")
+# Streamlit App
+st.title("📊 Currency Strength Matrix (Corrected Zigzag Swing Logic)")
 
 results = {}
 debug_output = []
@@ -99,6 +95,6 @@ final_df = final_df.sort_values("Currency")
 
 st.dataframe(final_df, use_container_width=True)
 
-with st.expander("🔍 Debug Logs (Swing-based Zigzag Simulation)"):
+with st.expander("🔍 Debug Logs (Corrected Swing Detection)"):
     for line in debug_output:
         st.text(line)
