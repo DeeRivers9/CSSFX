@@ -1,1 +1,1 @@
-# Currency Strength App (TwelveData SAR + ADX)
+# Currency Strength App (Refined Zigzag Logic via Recent Swings)
